@@ -37,6 +37,7 @@ async function loadSettings() {
     if (meta && meta.settings) {
         try {
             savedSettings = await meta.settings.get('chat-perms');
+            console.log('[chat-perms] Loaded from DB:', savedSettings);
         } catch (err) {
             console.warn('[chat-perms] Could not load settings from database:', err.message);
         }
@@ -53,10 +54,15 @@ async function loadSettings() {
     // Merge: defaults < saved < env
     const settings = { ...defaults };
     
-    // Apply saved settings
+    // Apply saved settings (don't skip empty strings for booleans)
     for (const [key, value] of Object.entries(savedSettings)) {
-        if (value !== undefined && value !== null && value !== '') {
-            settings[key] = value;
+        if (value !== undefined && value !== null) {
+            // For boolean fields, we need to keep 'false' values
+            if (key === 'warningEnabled' || key === 'keywordAlertsEnabled') {
+                settings[key] = value;
+            } else if (value !== '') {
+                settings[key] = value;
+            }
         }
     }
     
@@ -123,8 +129,8 @@ async function loadSettings() {
     settings.minPosts = parseInt(settings.minPosts, 10) || 5;
 
     // Ensure booleans
-    settings.warningEnabled = settings.warningEnabled === true || settings.warningEnabled === 'on';
-    settings.keywordAlertsEnabled = settings.keywordAlertsEnabled === true || settings.keywordAlertsEnabled === 'on';
+    settings.warningEnabled = settings.warningEnabled === true || settings.warningEnabled === 'on' || settings.warningEnabled === 'true';
+    settings.keywordAlertsEnabled = settings.keywordAlertsEnabled === true || settings.keywordAlertsEnabled === 'on' || settings.keywordAlertsEnabled === 'true';
 
     return settings;
 }
@@ -189,9 +195,12 @@ module.exports = {
     // Settings API routes
     router.get('/api/admin/plugins/chat-perms/settings', async (req, res) => {
         try {
+            console.log('[chat-perms] GET settings request');
             const settings = await loadSettings();
+            console.log('[chat-perms] Returning settings:', JSON.stringify(settings));
             res.json(settings);
         } catch (err) {
+            console.error('[chat-perms] Error loading settings:', err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -206,16 +215,18 @@ module.exports = {
                 if (Array.isArray(value)) {
                     settingsToSave[key] = JSON.stringify(value);
                 } else if (typeof value === 'boolean') {
-                    settingsToSave[key] = value ? 'on' : '';
+                    settingsToSave[key] = value ? 'true' : 'false';
                 } else {
                     settingsToSave[key] = String(value);
                 }
             }
             
+            console.log('[chat-perms] Saving settings:', settingsToSave);
             await meta.settings.set('chat-perms', settingsToSave);
             
             // Reload settings
             pluginSettings = await loadSettings();
+            console.log('[chat-perms] Reloaded settings:', pluginSettings);
             
             // Update sub-modules
             warningDisplay.updateSettings({
@@ -231,6 +242,7 @@ module.exports = {
             
             res.json({ success: true });
         } catch (err) {
+            console.error('[chat-perms] Error saving settings:', err);
             res.status(500).json({ error: err.message });
         }
     });

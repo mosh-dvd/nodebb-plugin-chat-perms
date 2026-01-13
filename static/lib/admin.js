@@ -5,7 +5,7 @@ define('admin/plugins/chat-perms', ['settings', 'alerts'], function (settings, a
 
     ACP.init = function () {
         // Load settings
-        settings.load('chat-perms', $('.chat-perms-settings'), function () {
+        settings.load('chat-perms', $('#chat-perms-settings'), function () {
             // Convert arrays to display format after load
             var adminUids = settings.get('chat-perms', 'adminUids');
             if (Array.isArray(adminUids)) {
@@ -47,7 +47,7 @@ define('admin/plugins/chat-perms', ['settings', 'alerts'], function (settings, a
             settings.set('chat-perms', 'keywordList', keywordList);
 
             // Save all settings
-            settings.save('chat-perms', $('.chat-perms-settings'), function () {
+            settings.save('chat-perms', $('#chat-perms-settings'), function () {
                 alerts.success('הגדרות נשמרו בהצלחה');
             });
         });

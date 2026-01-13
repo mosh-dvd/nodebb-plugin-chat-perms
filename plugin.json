@@ -4,6 +4,7 @@
     "description": "Advanced chat permissions with privacy warnings and keyword alerts",
     "version": "2.0.0",
     "library": "./lib.js",
+    "acpScripts": ["static/lib/admin.js"],
     "hooks": [
         { "hook": "filter:messaging.canGetMessages", "method": "canGetMessages" },
         { "hook": "filter:messaging.canGetRecentChats", "method": "canGetMessages" },

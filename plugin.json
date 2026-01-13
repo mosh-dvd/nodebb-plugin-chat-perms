@@ -14,6 +14,9 @@
         { "hook": "filter:admin.header.build", "method": "addAdminNavigation" },
         { "hook": "static:app.load", "method": "init" }
     ],
-    "acpScripts": ["static/lib/admin.js"],
+    "staticDirs": {
+        "static": "static"
+    },
+    "acpScripts": ["admin/plugins/chat-perms"],
     "templates": "static/templates"
 }

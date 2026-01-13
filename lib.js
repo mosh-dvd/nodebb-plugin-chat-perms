@@ -85,19 +85,37 @@ async function loadSettings() {
 
     // Ensure arrays
     if (!Array.isArray(settings.adminUids)) {
-        settings.adminUids = typeof settings.adminUids === 'string' 
-            ? settings.adminUids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
-            : [1];
+        if (typeof settings.adminUids === 'string') {
+            try {
+                settings.adminUids = JSON.parse(settings.adminUids);
+            } catch {
+                settings.adminUids = settings.adminUids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+            }
+        } else {
+            settings.adminUids = [1];
+        }
     }
     if (!Array.isArray(settings.keywordList)) {
-        settings.keywordList = typeof settings.keywordList === 'string'
-            ? settings.keywordList.split('\n').map(s => s.trim()).filter(s => s)
-            : [];
+        if (typeof settings.keywordList === 'string') {
+            try {
+                settings.keywordList = JSON.parse(settings.keywordList);
+            } catch {
+                settings.keywordList = settings.keywordList.split('\n').map(s => s.trim()).filter(s => s);
+            }
+        } else {
+            settings.keywordList = [];
+        }
     }
     if (!Array.isArray(settings.alertRecipientUids)) {
-        settings.alertRecipientUids = typeof settings.alertRecipientUids === 'string'
-            ? settings.alertRecipientUids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
-            : [];
+        if (typeof settings.alertRecipientUids === 'string') {
+            try {
+                settings.alertRecipientUids = JSON.parse(settings.alertRecipientUids);
+            } catch {
+                settings.alertRecipientUids = settings.alertRecipientUids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+            }
+        } else {
+            settings.alertRecipientUids = [];
+        }
     }
 
     // Ensure numbers
@@ -181,7 +199,20 @@ module.exports = {
     router.put('/api/admin/plugins/chat-perms/settings', async (req, res) => {
         try {
             const newSettings = req.body;
-            await meta.settings.set('chat-perms', newSettings);
+            
+            // Convert arrays to JSON strings for storage
+            const settingsToSave = {};
+            for (const [key, value] of Object.entries(newSettings)) {
+                if (Array.isArray(value)) {
+                    settingsToSave[key] = JSON.stringify(value);
+                } else if (typeof value === 'boolean') {
+                    settingsToSave[key] = value ? 'on' : '';
+                } else {
+                    settingsToSave[key] = String(value);
+                }
+            }
+            
+            await meta.settings.set('chat-perms', settingsToSave);
             
             // Reload settings
             pluginSettings = await loadSettings();

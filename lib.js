@@ -164,10 +164,45 @@ module.exports = {
         console.warn('[chat-perms] Plugin may not function correctly with this NodeBB version');
     }
     
-    // Setup ACP route
-    const controllers = require.main.require('./src/controllers');
+    // Setup ACP routes
     router.get('/admin/plugins/chat-perms', middleware.admin.buildHeader, renderAdmin);
     router.get('/api/admin/plugins/chat-perms', renderAdmin);
+    
+    // Settings API routes
+    router.get('/api/admin/plugins/chat-perms/settings', async (req, res) => {
+        try {
+            const settings = await loadSettings();
+            res.json(settings);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+    
+    router.put('/api/admin/plugins/chat-perms/settings', async (req, res) => {
+        try {
+            const newSettings = req.body;
+            await meta.settings.set('chat-perms', newSettings);
+            
+            // Reload settings
+            pluginSettings = await loadSettings();
+            
+            // Update sub-modules
+            warningDisplay.updateSettings({
+                WARNING_ENABLED: pluginSettings.warningEnabled,
+                WARNING_MESSAGE: pluginSettings.warningMessage,
+                WARNING_DISPLAY_TYPE: pluginSettings.warningDisplayType
+            });
+            keywordScanner.updateSettings({
+                KEYWORD_ALERTS_ENABLED: pluginSettings.keywordAlertsEnabled,
+                KEYWORD_LIST: pluginSettings.keywordList,
+                ALERT_RECIPIENT_UIDS: pluginSettings.alertRecipientUids
+            });
+            
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
     
     console.log('[chat-perms] Plugin initialized');
   },
@@ -304,6 +339,6 @@ module.exports = {
 /**
  * Renders the admin page
  */
-async function renderAdmin(req, res) {
+async function renderAdmin(_req, res) {
     res.render('admin/plugins/chat-perms', {});
 }

@@ -7,96 +7,192 @@ const compatibilityChecker = require('./compatibilityChecker');
 const warningDisplay = require('./warningDisplay');
 const keywordScanner = require('./keywordScanner');
 
+// Settings storage
+let pluginSettings = null;
+let meta = null;
+
 /**
- * Parses plugin settings from environment with defaults
- * Requirements: 2.2, 3.3
- * @returns {Object} Parsed settings with defaults applied
+ * Loads settings from NodeBB meta.settings with env override
+ * @returns {Promise<Object>} Settings object
  */
-function parsePluginSettings() {
-  let rawSettings;
-  try {
-    rawSettings = JSON.parse(process.env.CHAT_PERMS_PLUGIN_SETTINGS || '{}');
-  } catch {
-    rawSettings = {};
-  }
+async function loadSettings() {
+    const defaults = {
+        adminUids: [1],
+        allowChatGroup: 'allowChat',
+        denyChatGroup: 'denyChat',
+        minReputation: 10,
+        minPosts: 5,
+        chatNotYetAllowedMessage: 'עליך לצבור וותק לפני שתוכל להשתמש בצ\'אט',
+        chatDeniedMessage: 'הגישה שלך לצ\'אט נחסמה',
+        warningEnabled: false,
+        warningMessage: 'שים לב: ההנהלה יכולה לצפות בהודעות הצ\'אט',
+        warningDisplayType: 'banner',
+        keywordAlertsEnabled: false,
+        keywordList: [],
+        alertRecipientUids: []
+    };
 
-  // Default values for all settings
-  const defaults = {
-    // Existing settings
-    ADMIN_UIDS: [1],
-    ALLOW_CHAT_GROUP: 'allowChat',
-    DENY_CHAT_GROUP: 'denyChat',
-    MIN_REPUTATION: 10,
-    MIN_POSTS: 5,
-    CHAT_NOT_YET_ALLOWED_MESSAGE: 'CHAT_NOT_YET_ALLOWED_MESSAGE',
-    CHAT_DENIED_MESSAGE: 'CHAT_DENIED_MESSAGE',
-    
-    // New settings - Privacy Warning (Requirements: 2.2)
-    WARNING_ENABLED: false,
-    WARNING_MESSAGE: 'שים לב: ההנהלה יכולה לצפות בהודעות הצ\'אט',
-    WARNING_DISPLAY_TYPE: 'banner',
-    
-    // New settings - Keyword Alerts (Requirements: 3.3)
-    KEYWORD_ALERTS_ENABLED: false,
-    KEYWORD_LIST: [],
-    ALERT_RECIPIENT_UIDS: []
-  };
-
-  // Merge raw settings with defaults
-  const settings = { ...defaults };
-  
-  for (const key of Object.keys(defaults)) {
-    if (rawSettings[key] !== undefined) {
-      settings[key] = rawSettings[key];
+    // Try to load from meta.settings (ACP)
+    let savedSettings = {};
+    if (meta && meta.settings) {
+        try {
+            savedSettings = await meta.settings.get('chat-perms');
+        } catch (err) {
+            console.warn('[chat-perms] Could not load settings from database:', err.message);
+        }
     }
-  }
 
-  // Validate specific fields
-  if (!Array.isArray(settings.ADMIN_UIDS)) {
-    settings.ADMIN_UIDS = defaults.ADMIN_UIDS;
-  }
-  if (!Array.isArray(settings.KEYWORD_LIST)) {
-    settings.KEYWORD_LIST = defaults.KEYWORD_LIST;
-  }
-  if (!Array.isArray(settings.ALERT_RECIPIENT_UIDS)) {
-    settings.ALERT_RECIPIENT_UIDS = defaults.ALERT_RECIPIENT_UIDS;
-  }
-  if (!['banner', 'popup', 'inline'].includes(settings.WARNING_DISPLAY_TYPE)) {
-    settings.WARNING_DISPLAY_TYPE = defaults.WARNING_DISPLAY_TYPE;
-  }
+    // Environment variable override
+    let envSettings = {};
+    try {
+        envSettings = JSON.parse(process.env.CHAT_PERMS_PLUGIN_SETTINGS || '{}');
+    } catch {
+        // Invalid JSON, ignore
+    }
 
-  return settings;
+    // Merge: defaults < saved < env
+    const settings = { ...defaults };
+    
+    // Apply saved settings
+    for (const [key, value] of Object.entries(savedSettings)) {
+        if (value !== undefined && value !== null && value !== '') {
+            settings[key] = value;
+        }
+    }
+    
+    // Apply env overrides (convert old format to new)
+    const envKeyMap = {
+        ADMIN_UIDS: 'adminUids',
+        ALLOW_CHAT_GROUP: 'allowChatGroup',
+        DENY_CHAT_GROUP: 'denyChatGroup',
+        MIN_REPUTATION: 'minReputation',
+        MIN_POSTS: 'minPosts',
+        CHAT_NOT_YET_ALLOWED_MESSAGE: 'chatNotYetAllowedMessage',
+        CHAT_DENIED_MESSAGE: 'chatDeniedMessage',
+        WARNING_ENABLED: 'warningEnabled',
+        WARNING_MESSAGE: 'warningMessage',
+        WARNING_DISPLAY_TYPE: 'warningDisplayType',
+        KEYWORD_ALERTS_ENABLED: 'keywordAlertsEnabled',
+        KEYWORD_LIST: 'keywordList',
+        ALERT_RECIPIENT_UIDS: 'alertRecipientUids'
+    };
+    
+    for (const [envKey, settingKey] of Object.entries(envKeyMap)) {
+        if (envSettings[envKey] !== undefined) {
+            settings[settingKey] = envSettings[envKey];
+        }
+    }
+
+    // Ensure arrays
+    if (!Array.isArray(settings.adminUids)) {
+        settings.adminUids = typeof settings.adminUids === 'string' 
+            ? settings.adminUids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+            : [1];
+    }
+    if (!Array.isArray(settings.keywordList)) {
+        settings.keywordList = typeof settings.keywordList === 'string'
+            ? settings.keywordList.split('\n').map(s => s.trim()).filter(s => s)
+            : [];
+    }
+    if (!Array.isArray(settings.alertRecipientUids)) {
+        settings.alertRecipientUids = typeof settings.alertRecipientUids === 'string'
+            ? settings.alertRecipientUids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+            : [];
+    }
+
+    // Ensure numbers
+    settings.minReputation = parseInt(settings.minReputation, 10) || 10;
+    settings.minPosts = parseInt(settings.minPosts, 10) || 5;
+
+    // Ensure booleans
+    settings.warningEnabled = settings.warningEnabled === true || settings.warningEnabled === 'on';
+    settings.keywordAlertsEnabled = settings.keywordAlertsEnabled === true || settings.keywordAlertsEnabled === 'on';
+
+    return settings;
 }
 
-// Parse settings once at module load
-const pluginSettings = parsePluginSettings();
-
-// Initialize sub-modules with settings
-warningDisplay.updateSettings(pluginSettings);
-keywordScanner.updateSettings(pluginSettings);
-
-// Check compatibility on load (Requirements: 1.1, 1.2)
-const isCompatible = compatibilityChecker.checkCompatibility();
-if (!isCompatible) {
-  console.warn('[chat-perms] Plugin may not function correctly with this NodeBB version');
+/**
+ * Gets current settings (cached)
+ */
+function getSettings() {
+    return pluginSettings || {
+        adminUids: [1],
+        allowChatGroup: 'allowChat',
+        denyChatGroup: 'denyChat',
+        minReputation: 10,
+        minPosts: 5,
+        chatNotYetAllowedMessage: 'עליך לצבור וותק לפני שתוכל להשתמש בצ\'אט',
+        chatDeniedMessage: 'הגישה שלך לצ\'אט נחסמה',
+        warningEnabled: false,
+        warningMessage: 'שים לב: ההנהלה יכולה לצפות בהודעות הצ\'אט',
+        warningDisplayType: 'banner',
+        keywordAlertsEnabled: false,
+        keywordList: [],
+        alertRecipientUids: []
+    };
 }
-
-// Extract settings for use in hooks
-const ADMIN_UIDS = pluginSettings.ADMIN_UIDS;
-const ALLOW_CHAT_GROUP = pluginSettings.ALLOW_CHAT_GROUP;
-const DENY_CHAT_GROUP = pluginSettings.DENY_CHAT_GROUP;
-const MIN_REPUTATION = pluginSettings.MIN_REPUTATION;
-const MIN_POSTS = pluginSettings.MIN_POSTS;
-const CHAT_NOT_YET_ALLOWED_MESSAGE = pluginSettings.CHAT_NOT_YET_ALLOWED_MESSAGE;
-const CHAT_DENIED_MESSAGE = pluginSettings.CHAT_DENIED_MESSAGE;
 
 module.exports = {
+  /**
+   * Hook: static:app.load
+   * Initializes the plugin and loads settings
+   */
+  async init(params) {
+    const { router, middleware } = params;
+    
+    // Load meta module
+    meta = require.main.require('./src/meta');
+    
+    // Load settings
+    pluginSettings = await loadSettings();
+    
+    // Initialize sub-modules with settings
+    warningDisplay.updateSettings({
+        WARNING_ENABLED: pluginSettings.warningEnabled,
+        WARNING_MESSAGE: pluginSettings.warningMessage,
+        WARNING_DISPLAY_TYPE: pluginSettings.warningDisplayType
+    });
+    keywordScanner.updateSettings({
+        KEYWORD_ALERTS_ENABLED: pluginSettings.keywordAlertsEnabled,
+        KEYWORD_LIST: pluginSettings.keywordList,
+        ALERT_RECIPIENT_UIDS: pluginSettings.alertRecipientUids
+    });
+    
+    // Check compatibility
+    const isCompatible = compatibilityChecker.checkCompatibility();
+    if (!isCompatible) {
+        console.warn('[chat-perms] Plugin may not function correctly with this NodeBB version');
+    }
+    
+    // Setup ACP route
+    const controllers = require.main.require('./src/controllers');
+    router.get('/admin/plugins/chat-perms', middleware.admin.buildHeader, renderAdmin);
+    router.get('/api/admin/plugins/chat-perms', renderAdmin);
+    
+    console.log('[chat-perms] Plugin initialized');
+  },
+  
+  /**
+   * Hook: filter:admin.header.build
+   * Adds plugin to admin navigation
+   */
+  async addAdminNavigation(header) {
+    header.plugins.push({
+        route: '/plugins/chat-perms',
+        icon: 'fa-comments',
+        name: 'הרשאות צ\'אט'
+    });
+    return header;
+  },
+
   /**
    * Hook: canGetMessages
    * Validates user permissions and injects warning if enabled
    * Requirements: 1.1, 2.1
    */
   async canGetMessages (data) {
+    const settings = getSettings();
+    
     // Normalize hook data for compatibility (Requirements: 1.3)
     data = compatibilityChecker.normalizeHookData(data, { canGet: true });
     data.canGet = true;
@@ -104,19 +200,19 @@ module.exports = {
     const userData = await User.getUserData(data.callerUid);
     const userGroups = await Groups.getUserGroupsFromSet('groups:createtime', [data.callerUid]);
     if (
-      (userData.reputation < MIN_REPUTATION || userData.postcount < MIN_POSTS || moment(userData.joindate).isAfter(moment() /* .subtract(1, 'month') */)) &&
+      (userData.reputation < settings.minReputation || userData.postcount < settings.minPosts || moment(userData.joindate).isAfter(moment())) &&
       !userGroups[0].find(group => [
         'administrators',
         'Global Moderators',
-        ALLOW_CHAT_GROUP
+        settings.allowChatGroup
       ].includes(group.name))
     ) {
-      throw new Error(CHAT_NOT_YET_ALLOWED_MESSAGE);
+      throw new Error(settings.chatNotYetAllowedMessage);
     }
-    if (userGroups[0].find(group => group.name === DENY_CHAT_GROUP)) {
-      throw new Error(CHAT_DENIED_MESSAGE);
+    if (userGroups[0].find(group => group.name === settings.denyChatGroup)) {
+      throw new Error(settings.chatDeniedMessage);
     }
-    if (data.callerUid !== data.uid && !ADMIN_UIDS.includes(data.callerUid)) throw new Error('אין גישה!');
+    if (data.callerUid !== data.uid && !settings.adminUids.includes(data.callerUid)) throw new Error('אין גישה!');
     
     // Inject warning message if enabled (Requirements: 2.1)
     data = warningDisplay.injectWarning(data);
@@ -150,20 +246,22 @@ module.exports = {
    * Validates user-to-user messaging permissions
    */
   async canMessageUser (data) {
+    const settings = getSettings();
+    
     const userData = await User.getUserData(data.uid);
     const userGroups = await Groups.getUserGroupsFromSet('groups:createtime', [data.uid]);
     if (
-      (userData.reputation < MIN_REPUTATION || userData.postcount < MIN_POSTS || moment(userData.joindate).isAfter(moment() /* .subtract(1, 'month') */)) &&
+      (userData.reputation < settings.minReputation || userData.postcount < settings.minPosts || moment(userData.joindate).isAfter(moment())) &&
       !userGroups[0].find(group => [
         'administrators',
         'Global Moderators',
-        ALLOW_CHAT_GROUP
+        settings.allowChatGroup
       ].includes(group.name))
     ) {
-      throw new Error(CHAT_NOT_YET_ALLOWED_MESSAGE);
+      throw new Error(settings.chatNotYetAllowedMessage);
     }
-    if (userGroups[0].find(group => group.name === DENY_CHAT_GROUP)) {
-      throw new Error(CHAT_DENIED_MESSAGE);
+    if (userGroups[0].find(group => group.name === settings.denyChatGroup)) {
+      throw new Error(settings.chatDeniedMessage);
     }
   },
   
@@ -193,11 +291,19 @@ module.exports = {
    * Allows admins to view any chat room
    */
   async isUserInRoom (data) {
-    if (ADMIN_UIDS.includes(data.uid)) { data.inRoom = true; }
+    const settings = getSettings();
+    if (settings.adminUids.includes(data.uid)) { data.inRoom = true; }
     return data;
   },
   
   // Export for testing
-  parsePluginSettings,
-  getPluginSettings: () => pluginSettings
+  loadSettings,
+  getSettings
 };
+
+/**
+ * Renders the admin page
+ */
+async function renderAdmin(req, res) {
+    res.render('admin/plugins/chat-perms', {});
+}

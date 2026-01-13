@@ -1,5 +1,8 @@
 {
     "id": "nodebb-plugin-chat-perms",
+    "name": "Chat Permissions",
+    "description": "Advanced chat permissions with privacy warnings and keyword alerts",
+    "version": "2.0.0",
     "library": "./lib.js",
     "hooks": [
         { "hook": "filter:messaging.canGetMessages", "method": "canGetMessages" },
@@ -7,6 +10,10 @@
         { "hook": "filter:messaging.canReply", "method": "canReply" },
         { "hook": "static:messaging.canMessageUser", "method": "canMessageUser" },
         { "hook": "static:messaging.canMessageRoom", "method": "canMessageRoom" },
-        { "hook": "filter:messaging.isUserInRoom", "method": "isUserInRoom" }
-    ]
+        { "hook": "filter:messaging.isUserInRoom", "method": "isUserInRoom" },
+        { "hook": "filter:admin.header.build", "method": "addAdminNavigation" },
+        { "hook": "static:app.load", "method": "init" }
+    ],
+    "acpScripts": ["static/lib/admin.js"],
+    "templates": "static/templates"
 }

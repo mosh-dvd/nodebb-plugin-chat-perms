@@ -15,8 +15,8 @@
         { "hook": "static:app.load", "method": "init" }
     ],
     "staticDirs": {
-        "static": "static"
+        "admin": "static/admin"
     },
-    "acpScripts": ["admin/plugins/chat-perms"],
+    "acpScripts": ["plugins/chat-perms"],
     "templates": "static/templates"
 }

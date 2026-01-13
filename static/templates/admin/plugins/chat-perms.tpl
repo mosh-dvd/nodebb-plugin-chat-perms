@@ -105,9 +105,12 @@
 </div>
 
 <script>
-require(['alerts'], function(alerts) {
+$(document).ready(function() {
+    var basePath = (typeof config !== 'undefined' && config.relative_path) ? config.relative_path : '';
+    var csrfToken = (typeof config !== 'undefined' && config.csrf_token) ? config.csrf_token : '';
+    
     // Load settings
-    $.get(config.relative_path + '/api/admin/plugins/chat-perms/settings', function(s) {
+    $.get(basePath + '/api/admin/plugins/chat-perms/settings', function(s) {
         if (s) {
             $('#adminUids').val(Array.isArray(s.adminUids) ? s.adminUids.join(',') : s.adminUids || '');
             $('#allowChatGroup').val(s.allowChatGroup || '');
@@ -143,13 +146,25 @@ require(['alerts'], function(alerts) {
         };
 
         $.ajax({
-            url: config.relative_path + '/api/admin/plugins/chat-perms/settings',
+            url: basePath + '/api/admin/plugins/chat-perms/settings',
             method: 'PUT',
             contentType: 'application/json',
             data: JSON.stringify(data),
-            headers: {'x-csrf-token': config.csrf_token},
-            success: function() { alerts.success('הגדרות נשמרו בהצלחה'); },
-            error: function() { alerts.error('שגיאה בשמירה'); }
+            headers: {'x-csrf-token': csrfToken},
+            success: function() { 
+                if (typeof app !== 'undefined' && app.alertSuccess) {
+                    app.alertSuccess('הגדרות נשמרו בהצלחה');
+                } else {
+                    alert('הגדרות נשמרו בהצלחה');
+                }
+            },
+            error: function() { 
+                if (typeof app !== 'undefined' && app.alertError) {
+                    app.alertError('שגיאה בשמירה');
+                } else {
+                    alert('שגיאה בשמירה');
+                }
+            }
         });
     });
 });
